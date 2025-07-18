@@ -2,49 +2,30 @@ import connectToDB from "@/db/db";
 import UserModel from "@/models/User";
 import { tokenDecoder } from "@/utils";
 import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server"; // Импортируем NextRequest и NextResponse
 
-export const POST = async (req: NextRequest) => { // Используем NextRequest для лучшего типизирования
+export const POST = async (req: Request) => {
+
     try {
-        await connectToDB();
 
-        let token: string | undefined;
+        await connectToDB()
 
-        // 1. Попытка получить токен из куки
-        token = cookies().get('token')?.value;
+        const token = cookies().get('token')?.value ?? await req?.json()
 
-        // 2. Если токена нет в куки, пытаемся получить его из заголовка Authorization
-        if (!token) {
-            const authorizationHeader = req.headers.get('Authorization');
-            if (authorizationHeader?.startsWith('Bearer ')) {
-                token = authorizationHeader.split(' ')[1];
-            }
-        }
+        if (!token) return Response.json({ message: 'You are not logged in' }, { status: 401 })
 
-        // 3. Если токена все еще нет, возвращаем ошибку
-        if (!token) {
-            return NextResponse.json({ message: 'Authentication token missing.' }, { status: 401 });
-        }
+        const verifiedToken = tokenDecoder(token) as { phone: string }
 
-        // Далее ваша логика обработки токена
-        const verifiedToken = tokenDecoder(token) as { phone: string };
-
-        const userData = await UserModel.findOne({ phone: verifiedToken?.phone }).lean();
+        const userData = await UserModel.findOne({ phone: verifiedToken?.phone }).lean()
 
         if (!userData || !verifiedToken) {
-            cookies().delete('token'); // Удаляем невалидный токен
-            return NextResponse.json({ message: 'Invalid token or user not found!' }, { status: 401 });
+            cookies().delete('token')
+            return Response.json({ message: 'No user exist with this username or password!' }, { status: 401 })
         }
 
-        return NextResponse.json(userData, { status: 200 });
+        return Response.json(userData, { status: 200 })
 
     } catch (err) {
-        // Логирование ошибок для отладки
-        console.error("Error in /api/auth/me:", err);
-        // Отдельно обработайте SyntaxError, если он вдруг произойдет (например, если кто-то отправит мусор в теле)
-        if (err instanceof SyntaxError) {
-             return NextResponse.json({ message: 'Invalid request body format.' }, { status: 400 });
-        }
-        return NextResponse.json({ message: 'Unknown error, try later.' }, { status: 500 });
+        console.log(err)
+        return Response.json({ message: 'Unknown error, try later.' }, { status: 500 })
     }
 }
